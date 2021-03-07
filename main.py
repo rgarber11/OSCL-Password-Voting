@@ -14,7 +14,6 @@ from httplib2 import Http # I'm not sure this is necessary, but it really remove
 os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = 'true'
 # If modifying these scopes, delete the file token.pickle.
 SCOPES = ['https://mail.google.com'] # We're permanently deleting, so we need this
-my_email = "rg.1029384756@gmail.com"
 
 
 def send_message(service, user_id, message):
@@ -86,7 +85,7 @@ def main():
     messagesToDelete = []
     for i in range(numberOfParticipants):
         participantUUIDs.append(uuid.uuid4().hex)
-    messageListUUIDS = create_message("me", "osclwebsite@gmail.com", "List of UUIDS", str(participantUUIDs)) # Create the message for the parli of the list of uuids.
+    messageListUUIDS = create_message("me", "", "List of UUIDS", str(participantUUIDs)) # Create the message for the parli of the list of uuids.
     messageListUUIDS = send_message(service, "me", messageListUUIDS) #Send the message
     messagesToDelete.append(messageListUUIDS["id"])
     random.shuffle(participantUUIDs) #Shuffle the list, so you don't know which UUID was sent to which email
