@@ -1,20 +1,17 @@
-from __future__ import print_function
-
 import base64
 import os
 import pickle
 import random
+import secrets  # Pseudo-random passwords which is difficult to crack.
 import time
-import uuid  # Pseudo-random passwords which is difficult to crack.
 from email.mime.text import MIMEText
 
 from apiclient import errors
 from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from httplib2 import (
-    Http,
-)  # I'm not sure this is necessary, but it really removes a bunch of warnings
+from googleapiclient.discovery import build, google_auth_httplib2
+from googleapiclient.errors import HttpError
 
 os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "true"
 # If modifying these scopes, delete the file token.pickle.
@@ -45,7 +42,7 @@ def send_message(service, user_id, message):
         print("An error occurred: %s" % error)
 
 
-def create_message(sender, to, subject, message_text):
+def create_message(sender: str, to: str, subject: str, message_text: str):
     """Create a message for an email.
 
     Args:
@@ -67,11 +64,38 @@ def create_message(sender, to, subject, message_text):
     }  # Decode to encode is always fun. Hurray Python3!
 
 
+def send_passphrase_list(service, emails, passphrases):
+    to_delete = []
+    parli_message = create_message(
+        "me", "", "List of UUIDS", str(passphrases)
+    )  # Create the message for the parli of the list of uuids.
+    parli_message = send_message(service, "me", passphrases)  # Send the message
+    random.shuffle(
+        passphrases
+    )  # Shuffle the list, so you don't know which UUID was sent to which email
+    random.shuffle(emails)
+    for email, passphrase in zip(emails, passphrases):
+        message = create_message(
+            "me",
+            email,
+            f"Your OSCL Voting Password is: {passphrase}",
+            f"""Again, it's: {passphrase}
+            You will use this to vote. Don't tell it to someone else, or they'll be able to vote for you.
+            """,
+        )
+        message = send_message(service, "me", message)
+        to_delete.append(message["id"])
+    time.sleep(60)  # Deletions are working weird without a break
+    for i in to_delete:
+        service.users().messages().trash(userId="me", id=i).execute()
+        service.users().messages().delete(userId="me", id=i).execute()
+
+
 def main():
     """Shows basic usage of the Gmail API.
     Lists the user's Gmail labels.
     """
-    creds = None
+    creds: Credentials | None = None
     # The file token.pickle stores the user's access and refresh tokens, and is
     # created automatically when the authorization flow completes for the first
     # time.
@@ -91,32 +115,12 @@ def main():
     service = build("gmail", "v1", credentials=creds)  # boilerplate OAuth Code
 
     # Call the Gmail API
-    email_list = []  # Insert the emails of all the voters here.
-    participantUUIDs = [uuid.uuid4().hex for _ in email_list]
-    messagesToDelete = []
-    messageListUUIDS = create_message(
-        "me", "", "List of UUIDS", str(participantUUIDs)
-    )  # Create the message for the parli of the list of uuids.
-    messageListUUIDS = send_message(service, "me", messageListUUIDS)  # Send the message
-    random.shuffle(
-        participantUUIDs
-    )  # Shuffle the list, so you don't know which UUID was sent to which email
-    random.shuffle(email_list)
-    for email, uuid_str in zip(email_list, participantUUIDs):
-        message = create_message(
-            "me",
-            email,
-            f"Your OSCL Voting Password is: {uuid_str}",
-            f"""Again, it's: {uuid_str}
-            You will use this to vote. Don't tell it to someone else, or they'll be able to vote for you.
-            """,
-        )
-        message = send_message(service, "me", message)
-        messagesToDelete.append(message["id"])
-    time.sleep(60)  # Deletions are working weird without a break
-    for i in messagesToDelete:
-        service.users().messages().trash(userId="me", id=i).execute()
-        service.users().messages().delete(userId="me", id=i).execute()
+    with open("email_list") as emails:
+        email_list = [email.rstrip() for email in emails.readlines()]
+    participantUUIDs = [secrets.token_hex for _ in email_list]
+    send_passphrase_list(service, email_list, participantUUIDs)
+    with open("password_list", "w") as passwords:
+        passwords.write("\n".join(participantUUIDs))
 
 
 if __name__ == "__main__":
